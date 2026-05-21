@@ -5,3 +5,4 @@ deep-translator
 ctranslate2
 onnxruntime
 av
+gunicorn
