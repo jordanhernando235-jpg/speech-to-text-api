@@ -1,0 +1,7 @@
+flask
+flask-cors
+faster-whisper
+deep-translator
+ctranslate2
+onnxruntime
+av
