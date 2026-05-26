@@ -9,7 +9,7 @@ import traceback
 app = Flask(__name__)
 CORS(app)
 
-# Optional: allow larger uploads
+# Allow large uploads
 app.config["MAX_CONTENT_LENGTH"] = 500 * 1024 * 1024
 
 UPLOAD_FOLDER = "uploads"
@@ -17,7 +17,8 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 print("Loading Whisper model...")
 
-# tiny = fastest/lightest
+# Whisper model
+# tiny = fastest
 # base = better accuracy
 model = WhisperModel(
     "base",
@@ -32,37 +33,42 @@ def home():
 @app.route("/transcribe", methods=["POST"])
 def transcribe():
 
+    filepath = None
+
     try:
-        # Check file exists
+        # Check uploaded file
         if "file" not in request.files:
             return jsonify({
+                "success": False,
                 "error": "No file uploaded"
             }), 400
 
         file = request.files["file"]
 
-        # Check filename
+        # Empty filename check
         if file.filename == "":
             return jsonify({
+                "success": False,
                 "error": "Empty filename"
             }), 400
 
-        # Generate unique filename
+        # Create unique filename
         filename = f"{uuid.uuid4()}.mp3"
         filepath = os.path.join(UPLOAD_FOLDER, filename)
 
-        # Save uploaded audio
+        # Save audio file
         file.save(filepath)
 
         print(f"Saved file: {filepath}")
 
-        # Speech-to-text
-	segments, info = model.transcribe(
-    	filepath,
-    	beam_size=1,
-    	vad_filter=True
-	)
-      
+        # Transcribe audio
+        segments, info = model.transcribe(
+            filepath,
+            beam_size=1,
+            vad_filter=True
+        )
+
+        # Combine text
         text = ""
 
         for segment in segments:
@@ -72,7 +78,7 @@ def transcribe():
 
         print("Transcribed text:", text)
 
-        # Translate
+        # Translate text
         translated = GoogleTranslator(
             source="auto",
             target="id"
@@ -80,7 +86,7 @@ def transcribe():
 
         print("Translated text:", translated)
 
-        # Return response
+        # Return result
         return jsonify({
             "success": True,
             "text": text,
@@ -98,17 +104,17 @@ def transcribe():
         }), 500
 
     finally:
-        # Delete temp file
+        # Delete uploaded temp file
         try:
-            if 'filepath' in locals() and os.path.exists(filepath):
+            if filepath and os.path.exists(filepath):
                 os.remove(filepath)
                 print("Temporary file deleted.")
-        except:
-            pass
+        except Exception as delete_error:
+            print("Delete error:", delete_error)
 
 if __name__ == "__main__":
 
-    # Railway dynamic port support
+    # Railway dynamic port
     port = int(os.environ.get("PORT", 5000))
 
     app.run(
