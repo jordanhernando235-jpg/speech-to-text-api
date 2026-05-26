@@ -57,11 +57,12 @@ def transcribe():
         print(f"Saved file: {filepath}")
 
         # Speech-to-text
-        segments, info = model.transcribe(
-            filepath,
-            beam_size=5
-        )
-
+	segments, info = model.transcribe(
+    	filepath,
+    	beam_size=1,
+    	vad_filter=True
+	)
+      
         text = ""
 
         for segment in segments:
