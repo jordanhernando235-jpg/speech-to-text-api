@@ -9,62 +9,39 @@ import traceback
 app = Flask(__name__)
 CORS(app)
 
-# Allow large files (Railway-safe)
 app.config["MAX_CONTENT_LENGTH"] = 500 * 1024 * 1024
 
 UPLOAD_FOLDER = "uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-print("Loading Whisper model...")
+print("Loading Whisper model (base - slower but accurate)...")
 
-# ✅ BALANCED MODEL (GOOD ACCURACY + SPEED)
+# 🔥 BETTER ACCURACY FOR 2 MIN AUDIO
 model = WhisperModel(
-    "base",          # better than tiny
+    "base",          # change from tiny → base
     device="cpu",
     compute_type="int8"
 )
 
-# -----------------------------
-# HEALTH CHECK
-# -----------------------------
 @app.route("/")
 def home():
     return "Speech-to-Text Server Running OK"
 
-# -----------------------------
-# TRANSCRIBE + TRANSLATE
-# -----------------------------
 @app.route("/transcribe", methods=["POST"])
 def transcribe():
 
     filepath = None
 
     try:
-        # -----------------------------
-        # CHECK FILE
-        # -----------------------------
         if "file" not in request.files:
-            return jsonify({
-                "success": False,
-                "error": "No file uploaded"
-            }), 400
+            return jsonify({"success": False, "error": "No file uploaded"}), 400
 
         file = request.files["file"]
 
         if not file or file.filename.strip() == "":
-            return jsonify({
-                "success": False,
-                "error": "Empty file"
-            }), 400
+            return jsonify({"success": False, "error": "Empty file"}), 400
 
-        # -----------------------------
-        # GET TARGET LANGUAGE FROM ANDROID
-        # -----------------------------
-        target_lang = request.form.get("target_lang", "id")
-
-        # -----------------------------
-        # SAVE FILE
-        # -----------------------------
+        # keep real extension
         ext = os.path.splitext(file.filename)[1]
         if ext == "":
             ext = ".mp3"
@@ -74,29 +51,27 @@ def transcribe():
 
         file.save(filepath)
 
-        print("Saved:", filepath)
+        print(f"Saved file: {filepath}")
 
-        # -----------------------------
-        # WHISPER TRANSCRIPTION
-        # -----------------------------
+        # 🔥 SLOWER BUT MORE ACCURATE SETTINGS
         segments, info = model.transcribe(
             filepath,
-            task="transcribe",
-            language=None,  # AUTO DETECT LANGUAGE
-            beam_size=5,
+            beam_size=5,                  # better accuracy
             best_of=5,
             vad_filter=True,
-            condition_on_previous_text=False
+            condition_on_previous_text=True
         )
 
         text = " ".join(segment.text for segment in segments).strip()
 
         print("Original text:", text)
-        print("Detected language:", info.language)
 
-        # -----------------------------
-        # TRANSLATION
-        # -----------------------------
+        # language from whisper auto detect
+        detected_lang = info.language
+
+        # translation target from android
+        target_lang = request.form.get("target_lang", "id")
+
         translated = text
 
         if text.strip():
@@ -108,42 +83,26 @@ def transcribe():
             except Exception as e:
                 print("Translation error:", e)
 
-        # -----------------------------
-        # RESPONSE
-        # -----------------------------
         return jsonify({
             "success": True,
             "original": text,
             "translated": translated,
-            "language": info.language,
-            "target_language": target_lang
+            "detected_language": detected_lang
         })
 
     except Exception as e:
-        print("ERROR:")
         traceback.print_exc()
-
-        return jsonify({
-            "success": False,
-            "error": str(e)
-        }), 500
+        return jsonify({"success": False, "error": str(e)}), 500
 
     finally:
-        # -----------------------------
-        # CLEANUP FILE
-        # -----------------------------
         try:
             if filepath and os.path.exists(filepath):
                 os.remove(filepath)
-                print("Temp file deleted")
         except Exception as e:
             print("Delete error:", e)
 
-# -----------------------------
-# START SERVER (RAILWAY)
-# -----------------------------
-if __name__ == "__main__":
 
+if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
 
     app.run(
