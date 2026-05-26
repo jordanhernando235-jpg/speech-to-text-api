@@ -9,19 +9,17 @@ import traceback
 app = Flask(__name__)
 CORS(app)
 
-# Allow large uploads
+# Allow large uploads (recommended max ~50MB for stability)
 app.config["MAX_CONTENT_LENGTH"] = 500 * 1024 * 1024
 
 UPLOAD_FOLDER = "uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-print("Loading Whisper model...")
+print("Loading Whisper model... (tiny for speed)")
 
-# Whisper model
-# tiny = fastest
-# base = better accuracy
+# ✅ FAST MODEL FOR 2-MIN AUDIO
 model = WhisperModel(
-    "base",
+    "tiny",   # FASTEST OPTION
     device="cpu",
     compute_type="int8"
 )
@@ -36,7 +34,7 @@ def transcribe():
     filepath = None
 
     try:
-        # Check uploaded file
+        # Check file exists
         if "file" not in request.files:
             return jsonify({
                 "success": False,
@@ -45,48 +43,46 @@ def transcribe():
 
         file = request.files["file"]
 
-        # Empty filename check
-        if file.filename == "":
+        if not file or file.filename.strip() == "":
             return jsonify({
                 "success": False,
-                "error": "Empty filename"
+                "error": "Empty file"
             }), 400
 
-        # Create unique filename
+        # Save file
         filename = f"{uuid.uuid4()}.mp3"
         filepath = os.path.join(UPLOAD_FOLDER, filename)
-
-        # Save audio file
         file.save(filepath)
 
         print(f"Saved file: {filepath}")
 
-        # Transcribe audio
+        # 🔥 FASTER TRANSCRIPTION SETTINGS
         segments, info = model.transcribe(
             filepath,
             beam_size=1,
-            vad_filter=True
+            best_of=1,
+            vad_filter=True,
+            condition_on_previous_text=False
         )
 
         # Combine text
-        text = ""
-
-        for segment in segments:
-            text += segment.text + " "
-
-        text = text.strip()
+        text = " ".join(segment.text for segment in segments).strip()
 
         print("Transcribed text:", text)
 
-        # Translate text
-        translated = GoogleTranslator(
-            source="auto",
-            target="id"
-        ).translate(text)
+        # Translation (safe)
+        translated = text
 
-        print("Translated text:", translated)
+        try:
+            if text.strip():
+                translated = GoogleTranslator(
+                    source="auto",
+                    target="id"
+                ).translate(text)
+        except Exception as e:
+            print("Translation error:", e)
+            translated = text
 
-        # Return result
         return jsonify({
             "success": True,
             "text": text,
@@ -95,7 +91,7 @@ def transcribe():
         })
 
     except Exception as e:
-
+        print("ERROR:")
         traceback.print_exc()
 
         return jsonify({
@@ -104,21 +100,21 @@ def transcribe():
         }), 500
 
     finally:
-        # Delete uploaded temp file
+        # cleanup file
         try:
             if filepath and os.path.exists(filepath):
                 os.remove(filepath)
                 print("Temporary file deleted.")
-        except Exception as delete_error:
-            print("Delete error:", delete_error)
+        except Exception as e:
+            print("Delete error:", e)
+
 
 if __name__ == "__main__":
 
-    # Railway dynamic port
     port = int(os.environ.get("PORT", 5000))
 
     app.run(
         host="0.0.0.0",
         port=port,
-        debug=True
+        debug=False  # IMPORTANT for Railway
     )
